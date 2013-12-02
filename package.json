@@ -1,11 +1,8 @@
 {
-  "name": "long-poll-ready-signal",
-  "version": "0.0.0",
+  "name": "Hollback",
+  "version": "0.0.1",
   "description": "",
   "author": "",
-  "license": "BSD-2-Clause",
   "dependencies": {
-    "underscore": "~1.5.2",
-    "express": "~3.4.5"
   }
 }

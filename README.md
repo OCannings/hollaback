@@ -1,11 +1,11 @@
 # Hollaback
 
-A tiny signalling tool.
+A tiny presence service.
 
 ## Installation
-  1. npm install
-  2. node app
+  1. node app
 
 ## Usage
-  * Visit: http://localhost:8080/open/some_token
-  * In another tab visit: http://localhost:8080/close/some_token
+  * Request 1: http://localhost:8080/open/some_token
+  * Request 2: http://localhost:8080/close/some_token
+  * Request 1 will only complete once Request 2 has been made, letting Request 1 know that Request 2 has happened.

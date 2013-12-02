@@ -1,46 +1,73 @@
-var app = require("express")();
+var http = require('http')
+ , port = (process.env.PORT || 8080)
+ , connections = {};
 
-var connections = {};
+var response = {
+  ok: function(res) {
+    response.end(res, "OK", 200);
+  },
 
-app.use(function(req, res, next) {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Headers", "X-Requested-With");
-  next();
-});
+  timeout: function(res) {
+    response.end(res, "Timeout", 408);
+  },
 
-app.get("/open/:token", function(req, res) {
-  var token = req.params.token;
+  missing: function(res) {
+    response.end(res, "Missing", 404);
+  },
 
-  if (!connections[token]) {
-    connections[token] = res;
-  } else {
-    res.send("Active token conflict", 409);
-    return;
+  end: function(res, body, code) {
+    res.setHeader("Content-Length", body.length);
+    res.statusCode = code;
+    res.end(body);
   }
+}
 
-  setTimeout(function() {
-    res.send("Timeout", 408);
-    delete connections[token];
-  }, process.env.HOLLABACK_TIMEOUT || 30000);
-
-});
-
-app.get("/close/:token", function(req, res) {
-  var token = req.params.token;
-
-  if (connections[token]) {
-    connections[token].send("OK");
-    delete connections[token];
-    res.send("OK");
-  } else {
-    res.send("No matching connection");
+var addConnection = function(token, res, timeout) {
+  console.log("CONNECT: ", token);
+  connections[token] = {
+    res: res,
+    timeout: timeout
   }
-});
+}
 
-app.get("/status", function(req, res) {
-  res.json({
-    "connections": Object.keys(connections).length
-  });
-});
+var createTimeout = function(token) {
+  return setTimeout(function() {
+    console.log("TIMEOUT: ", token);
+    closeConnection(token, response.timeout);
+  }, process.env.HOLLABACK_TIMEOUT || 5000);
+}
 
-app.listen(process.env.PORT || 8080);
+var closeConnection = function(token, responseType) {
+  var connection = connections[token];
+  if (connection) {
+    responseType(connection.res);
+    clearTimeout(connection.timeout);
+    delete connections[token];
+  }
+}
+
+var request = function(req, res) {
+  res.setHeader("Content-Type", "text/plain");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Headers", "X-Requested-With");
+
+  var token = req.url.match(/\/(\w+)\/(\w+)$/);
+
+  if (token) {
+    token = token[2];
+    console.log("Connections: ", Object.keys(connections));
+
+    if (!connections[token]) {
+      addConnection(token, res, createTimeout(token));
+    } else {
+      console.log("MATCH: ", token);
+      response.ok(res);
+      closeConnection(token, response.ok);
+    }
+  } else {
+    response.missing(res);
+  }
+};
+
+http.createServer(request).listen(port);
+console.log('Server running at http://localhost:' + port);
