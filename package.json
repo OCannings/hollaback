@@ -4,5 +4,7 @@
   "description": "",
   "author": "",
   "dependencies": {
+    "redis": "~0.10.0",
+    "yargs": "~1.0.15"
   }
 }

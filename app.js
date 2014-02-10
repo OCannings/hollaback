@@ -1,6 +1,54 @@
 var http = require('http')
- , port = (process.env.PORT || 8080)
- , connections = {};
+  , Redis = require('redis')
+  , redis = Redis.createClient()
+  , redisSub = Redis.createClient()
+  , argv = require('yargs').argv
+  , port = (argv.p || process.env.PORT || 8080)
+  , connections = {}
+  , tokenExpire = 4;
+
+var redisKeyspace = 'hollaback:';
+
+
+var redisKey = function(token) {
+  return redisKeyspace + token;
+}
+
+redis.on('error', function(err) {
+  console.log('Error ' + err);
+});
+
+redisSub.on('error', function(err) {
+  console.log('Error ' + err);
+});
+
+redisSub.psubscribe('__key*__:*');
+redis.config("GET", "notify-keyspace-events", function() {
+  console.log(arguments);
+});
+
+var commandFromChannel = function(channel) {
+  var matches = channel.match(/([^:]+)$/);
+  return matches && matches[0];
+}
+
+redisSub.on('pmessage', function(pattern, channel, token) {
+  console.log(arguments);
+  switch (commandFromChannel(channel)) {
+    case 'incrby':
+      redis.get(token, function(err, count) {
+        if (parseInt(count, 10) >= 2) {
+          closeConnection(token.replace(redisKeyspace, ''), response.ok);
+        }
+      });
+
+      redis.expire(token, tokenExpire);
+      break;
+    case 'expired':
+      closeConnection(token.replace(redisKeyspace, ''), response.timeout);
+      break
+  }
+});
 
 var response = {
   ok: function(res) {
@@ -22,48 +70,48 @@ var response = {
   }
 }
 
-var addConnection = function(token, res, timeout) {
+var addConnection = function(token, res) {
   console.log("CONNECT: ", token);
-  connections[token] = {
-    res: res,
-    timeout: timeout
+  if (!connections[token]) {
+    connections[token] = [];
   }
-}
-
-var createTimeout = function(token) {
-  return setTimeout(function() {
-    console.log("TIMEOUT: ", token);
-    closeConnection(token, response.timeout);
-  }, process.env.HOLLABACK_TIMEOUT || 5000);
+  connections[token].push(res);
 }
 
 var closeConnection = function(token, responseType) {
-  var connection = connections[token];
-  if (connection) {
-    responseType(connection.res);
-    clearTimeout(connection.timeout);
+  var conns = connections[token];
+  if (conns) {
+    conns.forEach(function(res) {
+      responseType(res);
+    });
     delete connections[token];
   }
 }
 
 var request = function(req, res) {
+  var token, key;
+
   res.setHeader("Content-Type", "text/plain");
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "X-Requested-With");
 
-  var token = req.url.match(/\/(\w+)\/(\w+)$/);
+  token = req.url.match(/\/(\w+)\/(\w+)$/);
 
   if (token) {
     token = token[2];
     console.log("Connections: ", Object.keys(connections));
 
-    if (!connections[token]) {
-      addConnection(token, res, createTimeout(token));
-    } else {
-      console.log("MATCH: ", token);
-      response.ok(res);
-      closeConnection(token, response.ok);
-    }
+    key = redisKey(token);
+    addConnection(token, res);
+
+/*    redis.multi()
+      .incr(key)
+      .expire(key, tokenExpire)
+      .exec();
+      */
+    redis.incr(key);
+    redis.expire(key, tokenExpire);
+
   } else {
     response.missing(res);
   }
