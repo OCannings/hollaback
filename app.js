@@ -1,6 +1,6 @@
 var http = require('http')
   , TokenStore = require(__dirname + "/lib/token_store")
-  , RedisStore = require(__dirname + "/lib/redis_store")
+  , RedisStore = require(__dirname + "/lib/storage/redis_store")
   , argv = require('yargs').argv
   , port = (argv.p || process.env.PORT || 8080)
   , tokenExpire = 15;
@@ -40,13 +40,13 @@ var request = function(req, res) {
     token = token[2];
 
     tokenStore.once("verified:" + token, function(token, success) {
-      console.log(token);
       if (success) {
         response.ok(res);
       } else {
         response.timeout(res);
       }
     });
+
     tokenStore.createOrUpdateToken(token);
   } else {
     response.missing(res);
