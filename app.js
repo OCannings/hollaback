@@ -1,54 +1,11 @@
 var http = require('http')
-  , Redis = require('redis')
-  , redis = Redis.createClient()
-  , redisSub = Redis.createClient()
+  , TokenStore = require(__dirname + "/lib/new_token_store")
+  , RedisStore = require(__dirname + "/lib/redis_store")
   , argv = require('yargs').argv
   , port = (argv.p || process.env.PORT || 8080)
-  , connections = {}
-  , tokenExpire = 4;
+  , tokenExpire = 15;
 
-var redisKeyspace = 'hollaback:';
-
-
-var redisKey = function(token) {
-  return redisKeyspace + token;
-}
-
-redis.on('error', function(err) {
-  console.log('Error ' + err);
-});
-
-redisSub.on('error', function(err) {
-  console.log('Error ' + err);
-});
-
-redisSub.psubscribe('__key*__:*');
-redis.config("GET", "notify-keyspace-events", function() {
-  console.log(arguments);
-});
-
-var commandFromChannel = function(channel) {
-  var matches = channel.match(/([^:]+)$/);
-  return matches && matches[0];
-}
-
-redisSub.on('pmessage', function(pattern, channel, token) {
-  console.log(arguments);
-  switch (commandFromChannel(channel)) {
-    case 'incrby':
-      redis.get(token, function(err, count) {
-        if (parseInt(count, 10) >= 2) {
-          closeConnection(token.replace(redisKeyspace, ''), response.ok);
-        }
-      });
-
-      redis.expire(token, tokenExpire);
-      break;
-    case 'expired':
-      closeConnection(token.replace(redisKeyspace, ''), response.timeout);
-      break
-  }
-});
+var tokenStore = new TokenStore(RedisStore);
 
 var response = {
   ok: function(res) {
@@ -70,24 +27,6 @@ var response = {
   }
 }
 
-var addConnection = function(token, res) {
-  console.log("CONNECT: ", token);
-  if (!connections[token]) {
-    connections[token] = [];
-  }
-  connections[token].push(res);
-}
-
-var closeConnection = function(token, responseType) {
-  var conns = connections[token];
-  if (conns) {
-    conns.forEach(function(res) {
-      responseType(res);
-    });
-    delete connections[token];
-  }
-}
-
 var request = function(req, res) {
   var token, key;
 
@@ -99,19 +38,16 @@ var request = function(req, res) {
 
   if (token) {
     token = token[2];
-    console.log("Connections: ", Object.keys(connections));
 
-    key = redisKey(token);
-    addConnection(token, res);
-
-/*    redis.multi()
-      .incr(key)
-      .expire(key, tokenExpire)
-      .exec();
-      */
-    redis.incr(key);
-    redis.expire(key, tokenExpire);
-
+    tokenStore.once("verified:" + token, function(token, success) {
+      console.log(token);
+      if (success) {
+        response.ok(res);
+      } else {
+        response.timeout(res);
+      }
+    });
+    tokenStore.createOrUpdateToken(token);
   } else {
     response.missing(res);
   }
