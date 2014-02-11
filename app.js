@@ -1,5 +1,5 @@
 var http = require('http')
-  , TokenStore = require(__dirname + "/lib/new_token_store")
+  , TokenStore = require(__dirname + "/lib/token_store")
   , RedisStore = require(__dirname + "/lib/redis_store")
   , argv = require('yargs').argv
   , port = (argv.p || process.env.PORT || 8080)
